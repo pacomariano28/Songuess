@@ -1,6 +1,7 @@
 /**
  * Persists lock cooldown across reloads (localStorage) and drives the lock-button UI timer.
  * Penalty duration is written by useMatchSocket on wrong guess / round resume.
+ * Countdown uses synced server time so mobile throttling does not accumulate lag.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -8,54 +9,58 @@ import {
   readStoredCooldownEnd,
 } from "../../utils/matchCooldown";
 import { SECOND_MS } from "../constants";
+import { syncedNow } from "../utils/serverClock";
+
+const TICK_MS = 200;
 
 export function useMatchCooldown(code: string, initialCode: string) {
   const [cooldownEndsAt, setCooldownEndsAt] = useState<number | null>(() =>
     readStoredCooldownEnd(initialCode),
   );
-  const [cooldownUiTick, setCooldownUiTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => syncedNow());
 
   useEffect(() => {
-    if (!code) {
-      setCooldownEndsAt(null);
-      return;
-    }
-    setCooldownEndsAt(readStoredCooldownEnd(code));
+    const storedEnd = code ? readStoredCooldownEnd(code) : null;
+    const timerId = window.setTimeout(() => {
+      setCooldownEndsAt(storedEnd);
+      setNowMs(syncedNow());
+    }, 0);
+    return () => window.clearTimeout(timerId);
   }, [code]);
 
   useEffect(() => {
     if (!code || cooldownEndsAt === null) return undefined;
 
     const tick = () => {
-      const now = Date.now();
+      const now = syncedNow();
       if (now >= cooldownEndsAt) {
         clearStoredCooldown(code);
         setCooldownEndsAt(null);
         return;
       }
-      setCooldownUiTick((value) => value + 1);
+      setNowMs(now);
     };
 
-    if (Date.now() >= cooldownEndsAt) {
+    if (syncedNow() >= cooldownEndsAt) {
       clearStoredCooldown(code);
-      setCooldownEndsAt(null);
-      return undefined;
+      const expiryTimer = window.setTimeout(() => setCooldownEndsAt(null), 0);
+      return () => window.clearTimeout(expiryTimer);
     }
 
     tick();
-    const timerId = window.setInterval(tick, SECOND_MS);
+    const timerId = window.setInterval(tick, TICK_MS);
     return () => window.clearInterval(timerId);
   }, [code, cooldownEndsAt]);
 
   const { isCooldownActive, cooldownSeconds } = useMemo(() => {
-    const active = cooldownEndsAt !== null && cooldownEndsAt > Date.now();
+    const active = cooldownEndsAt !== null && cooldownEndsAt > nowMs;
     return {
       isCooldownActive: active,
       cooldownSeconds: active
-        ? Math.ceil((cooldownEndsAt - Date.now()) / SECOND_MS)
+        ? Math.ceil((cooldownEndsAt - nowMs) / SECOND_MS)
         : 0,
     };
-  }, [cooldownEndsAt, cooldownUiTick]);
+  }, [cooldownEndsAt, nowMs]);
 
   return {
     cooldownEndsAt,

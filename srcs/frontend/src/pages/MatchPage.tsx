@@ -143,10 +143,12 @@ export default function MatchPage() {
     resumeAudioFromUserGesture,
     fadeOutAudio,
     updateTrackTimerDisplay,
+    setPlayingStartedAt,
   } = useMatchAudio({
     audioUrl,
     roundInfo,
     code,
+    roundPhase,
     onAudioError: handleAudioError,
   });
 
@@ -214,6 +216,7 @@ export default function MatchPage() {
     lockOwnerId,
     tryPlayAudio,
     updateTrackTimerDisplay,
+    setPlayingStartedAt,
     setMatchState,
     setNotFound,
     setError,
@@ -312,16 +315,15 @@ export default function MatchPage() {
     [matchState, scores],
   );
 
-  const playersList = matchState?.players || [];
   const resultsData = useMemo(
     () =>
       buildResultsData(
         finalScores,
-        playersList,
+        matchState?.players ?? [],
         scores,
         t("match.user.playerFallback"),
       ),
-    [finalScores, playersList, scores, t],
+    [finalScores, matchState?.players, scores, t],
   );
 
   // Derive which overlays are visible in the audio stage (mutually exclusive layers)
